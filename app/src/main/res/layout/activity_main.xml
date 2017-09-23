@@ -6,7 +6,6 @@
     android:layout_height="match_parent"
     tools:context="com.example.kate.myapplication.MainActivity">
 
-
     <!--<com.example.kate.myapplication.WheelView-->
         <!--android:layout_width="400dp"-->
         <!--android:layout_height="200dp" />-->

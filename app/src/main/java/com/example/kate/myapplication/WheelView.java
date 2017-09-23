@@ -56,14 +56,12 @@ public class WheelView extends View {
             "21:00" , "21:30",
             "22:00"));
 
-
     private String startUnablePeriod = "12:56";
     private String finishUnablePeriod = "14:56";
 
     String mUnableText;
 
     SimpleDateFormat mDateFormat = new SimpleDateFormat(TIME_FORMAT);
-
 
     //    measure
     private int widgetHeight;
@@ -100,6 +98,8 @@ public class WheelView extends View {
 
     private int mCurrentIndex;
 
+    private int mMinimumIndex;
+
     public Handler handler = new Handler(msg -> {
         switch (msg.what) {
             case MSG_INVALIDATE:
@@ -111,7 +111,7 @@ public class WheelView extends View {
             case MSG_SELECTED_ITEM:
                 try {
                     if(isUnableTime(items.get(mCurrentIndex))) {
-                        startScrollTo(getNearestAbleTimeDistance());
+                        startScroll(getNearestAbleTimeDistance());
                     }else {
                         itemSelected();
                     }
@@ -306,17 +306,19 @@ public class WheelView extends View {
         @Override
         public final boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
             startSmoothScrollTo(velocityY);
-            Log.i(TAG, "WheelViewGestureListener -> onFling " + String.valueOf(velocityY));
+//            Log.i(TAG, "WheelViewGestureListener -> onFling " + String.valueOf(velocityY));
             return true;
         }
 
         @Override
         public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
-            Log.i(TAG, "WheelViewGestureListener -> onScroll");
+//            Log.i(TAG, "WheelViewGestureListener -> onScroll");
             mTotalScrollY = (int) ((float) mTotalScrollY + distanceY);
 
             if(mTotalScrollY < 0) {
                 mTotalScrollY = 0;
+            }else if(mTotalScrollY < mMinimumIndex){
+                mTotalScrollY = mMinimumIndex;
             } else if(mTotalScrollY > mItemsListHeight){
                 mTotalScrollY = mItemsListHeight;
             }
@@ -360,6 +362,9 @@ public class WheelView extends View {
             if (mTotalScrollY <= 0) {
                 velocity = 0F;
                 mTotalScrollY = 0;
+            } else if(mTotalScrollY <= mMinimumIndex){
+                velocity = 0F;
+                mTotalScrollY = mMinimumIndex;
             } else if (mTotalScrollY >= mItemsListHeight) {
                 mTotalScrollY = mItemHeight;
             }
@@ -474,19 +479,23 @@ public class WheelView extends View {
         scheduledFuture = executorService.scheduleWithFixedDelay(new WheelView.FlingRunnable(velocityY), 0, velocityFling, TimeUnit.MILLISECONDS);
     }
 
-    private void startScrollTo(int distance){
+    private void startScroll(int distance){
         cancelSchedule();
         scheduledFuture = executorService.scheduleWithFixedDelay(new ScrollToTargetRunnable(distance),
                 0, 10, TimeUnit.MILLISECONDS);
     }
 
     private void itemSelected() {
-        postDelayed(this::onItemSelected, 200L);
+        postDelayed(this::onItemSelected, 0L);
     }
 
     private void onItemSelected() {
         for (OnItemSelectedListener onItemSelectedListener : listeners) {
-            onItemSelectedListener.onLoopScrollFinish(items.get(mCurrentIndex), items.indexOf(items.get(mCurrentIndex)));
+            try {
+                onItemSelectedListener.onLoopScrollFinish(items.get(mCurrentIndex), items.indexOf(items.get(mCurrentIndex)));
+            } catch (ParseException e) {
+                e.printStackTrace();
+            }
 
         }
     }
@@ -506,6 +515,15 @@ public class WheelView extends View {
         return 0;
     }
 
+    private int getNearestBiggerAbleTimeDistanceFromPosition(int position) throws ParseException {
+        for(int i = position; i <= items.size(); ++i) {
+            if(!isUnableTime(items.get(i))) {
+                mMinimumIndex = (i -1) * mItemHeight;
+                return mMinimumIndex - mCurrentIndex * mItemHeight;
+            }
+        }
+        return 0;
+    }
 
     private boolean isUnableTime(String itemTime) throws ParseException {
         return getMilisecounds(itemTime) > getMilisecounds(startUnablePeriod)
@@ -519,11 +537,18 @@ public class WheelView extends View {
 
 //    listeners
     public interface OnItemSelectedListener {
-        void onLoopScrollFinish(@NonNull String item, int position);
+        void onLoopScrollFinish(@NonNull String item, int position) throws ParseException;
     }
 
+    public void translateToPosition(int position) throws ParseException {
+        if(isUnableTime(items.get(position))) {
+            startScroll(getNearestBiggerAbleTimeDistanceFromPosition(position));
+        }else {
+            startScroll((position - mCurrentIndex) * mItemHeight);
+        }
+    }
 
-    public void translateToPosition(int position) {
-        startScrollTo((position - mCurrentIndex) * mItemHeight);
+    public void setmMinimumIndex(int position) {
+        mMinimumIndex = (position - 1)*mItemHeight;
     }
 }
