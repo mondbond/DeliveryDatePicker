@@ -12,8 +12,8 @@
 
     <com.example.kate.myapplication.DeliveryPeriodPicker
         android:id="@+id/dpp"
-        android:layout_width="400dp"
-        android:layout_height="200dp">
+        android:layout_width="350dp"
+        android:layout_height="175dp">
 
     </com.example.kate.myapplication.DeliveryPeriodPicker>
 

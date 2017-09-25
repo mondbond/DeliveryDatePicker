@@ -4,6 +4,7 @@ import android.content.Context;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.LinearLayout;
@@ -16,9 +17,14 @@ import java.text.ParseException;
 
 public class DeliveryPeriodPicker extends LinearLayout {
 
+    public final static int DEFAULT_TEXT_SIZE = 20;
+
 
     private int mCurrentStartPosition;
     private int mCurrentEndPosition;
+
+    private int mBeginUnableInterval;
+    private int mEndUnableInterval;
 
     private WheelView.OnItemSelectedListener mStartWheelListener = new WheelView.OnItemSelectedListener() {
         @Override
@@ -36,9 +42,6 @@ public class DeliveryPeriodPicker extends LinearLayout {
     };
 
     private int mMinimumIntervalInMinutes = 30;
-
-    private int mStartUnablePosition;
-    private int mEndUnablePosition;
 
     private View rootView;
 
@@ -66,9 +69,6 @@ public class DeliveryPeriodPicker extends LinearLayout {
         draw();
     }
 
-    private WheelView mStartPeriod;
-    private WheelView mEndPeriodPeriod;
-
     private void draw(){
         rootView = LayoutInflater.from(getContext()).inflate(R.layout.delivery_picker, this, true);
 
@@ -77,6 +77,9 @@ public class DeliveryPeriodPicker extends LinearLayout {
 
         mStartWheel.setOnItemSelectedListener(mStartWheelListener);
         mEndWheel.setOnItemSelectedListener(mEndWheelListener);
+
+        mStartWheel.setAlign(WheelView.ALIGN_LEFT);
+        mEndWheel.setAlign(WheelView.ALIGN_RIGHT);
     }
 
     private void translateEndWheel(int startWheelPosition) throws ParseException {
@@ -91,15 +94,24 @@ public class DeliveryPeriodPicker extends LinearLayout {
     }
 
 
-    public void setMinimumIntervalInMinutes(int mMinimumIntervalInMinutes) {
+    public void setMinimumIntervalInMin(int mMinimumIntervalInMinutes) {
         this.mMinimumIntervalInMinutes = mMinimumIntervalInMinutes;
     }
 
-    public void setStartUnablePosition(int mStartUnablePositionInMl) {
-        this.mStartUnablePosition = mStartUnablePosition;
+    public void setUnableInterval(int begin, int end){
+        mBeginUnableInterval = begin;
+        mEndUnableInterval = end;
+        mStartWheel.setUnableInterval(begin, end);
+        mEndWheel.setUnableInterval(begin, end);
     }
 
-    public void setEndUnablePosition(int mEndUnablePositionInMl) {
-        this.mEndUnablePosition = mEndUnablePosition;
+    public void setTextSize(int size) {
+        mStartWheel.setTextSize(size);
+        mEndWheel.setTextSize(size);
+    }
+
+    public void setUnableText(String unableText) {
+        mStartWheel.setUnableText(unableText);
+        mEndWheel.setUnableText(unableText);
     }
 }
