@@ -13,9 +13,8 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         deliveryPeriodPicker = (DeliveryPeriodPicker) findViewById(R.id.dpp);
-        deliveryPeriodPicker.setUnableInterval(54000000, 61200000);
+//        deliveryPeriodPicker.setUnableInterval(54000000, 61200000);
         deliveryPeriodPicker.setMinimumIntervalInMin(120);
 //        deliveryPeriodPicker.setTextSize(16);
-
     }
 }

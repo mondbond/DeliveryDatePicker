@@ -15,7 +15,6 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.text.TextUtils;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
@@ -23,8 +22,6 @@ import android.view.View;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -45,57 +42,14 @@ public class WheelView extends View {
     public static final String ALIGN_LEFT = "left";
     public static final String ALIGN_RIGHT = "right";
 
+    private final String TIME_FORMAT = "HH:mm";
 
     public final static int DEFAULT_TEXT_SIZE = 20;
     public final static int MAX_TEXT_SIZE = 40;
+
     public final static String DEFAULT_UNABLE_TEXT = "unable";
 
-    private int mHighlightColor;
-    private int mUnableColor;
-    private int mTextColor;
-
     private final List<OnItemSelectedListener> listeners = new ArrayList<>();
-
-    // data
-    private final String TIME_FORMAT = "HH:mm";
-
-    private List<String> items = new ArrayList<String>(Arrays.asList(
-            "06:00", "06:30",
-            "07:00" , "07:30",
-            "08:00" , "08:30",
-            "09:00" , "09:30",
-            "10:00" , "10:30",
-            "11:00" , "11:30",
-            "12:00" , "12:30",
-            "13:00" , "13:30",
-            "14:00" , "14:30",
-            "15:00" , "15:30",
-            "16:00" , "16:30",
-            "17:00" , "17:30",
-            "18:00" , "18:30",
-            "19:00" , "19:30",
-            "20:00" , "20:30",
-            "21:00" , "21:30",
-            "22:00", "22:30",
-            "23:00", "23:30"));
-
-
-    private List<WheelView.Time> timeItems = new ArrayList<Time>();
-
-    private String mStartUnablePeriod = "12:56";
-    private String mFinishUnablePeriod = "14:56";
-
-    private String mTextAlign;
-    private StringBuilder mText;
-
-
-    String mUnableText;
-
-    private int mTextSize;
-
-    private Date mDate = new Date();
-
-    SimpleDateFormat mDateFormat = new SimpleDateFormat(TIME_FORMAT);
 
     //    measure
     private int widgetHeight;
@@ -112,7 +66,6 @@ public class WheelView extends View {
     int centerX;
     int centerY;
 
-    //
     int mTotalScrollY;
     int mItemHeight;
     int mItemsListHeight;
@@ -120,7 +73,36 @@ public class WheelView extends View {
     int mTopLineY;
     int mBottomLineY;
 
-    //    work
+    private int mCurrentIndex;
+
+    private int mMinimumY;
+    private int mMaximumY;
+
+// data
+    private List<Interval> mIntervals;
+    private List<WheelView.Time> timeItems;
+    String mUnableText;
+    private int mTextSize;
+
+    private String mTextAlign;
+
+    private StringBuilder mText;
+    private Date mDate = new Date();
+    SimpleDateFormat mDateFormat = new SimpleDateFormat(TIME_FORMAT);
+
+//  instruments
+    private final Paint mHighlightTextPaint = new Paint();
+    private final Paint mUsualTextPaint = new Paint();
+    private final Paint mUnableTextPaint = new Paint();
+    private final Paint mLinePaint = new Paint();
+    private final Paint mFadePaint = new Paint();
+
+    Shader mShader = new LinearGradient(0, 0, 0, 40, Color.WHITE, Color.TRANSPARENT, Shader.TileMode.MIRROR);
+
+    private int mHighlightColor;
+    private int mUnableColor;
+    private int mTextColor;
+
     public static final int MSG_INVALIDATE = 1000;
     public static final int MSG_SCROLL_LOOP = 2000;
     public static final int MSG_SELECTED_ITEM = 3000;
@@ -129,10 +111,6 @@ public class WheelView extends View {
     private final ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
 
     private ScheduledFuture<?> scheduledFuture;
-
-    private int mCurrentIndex;
-
-    private int mMinimumIndex;
 
     public Handler handler = new Handler(msg -> {
         switch (msg.what) {
@@ -144,8 +122,8 @@ public class WheelView extends View {
                 break;
             case MSG_SELECTED_ITEM:
                 try {
-                    if(isUnableTime(items.get(mCurrentIndex))) {
-                        if(mTotalScrollY + getNearestAbleTimeDistance() < mMinimumIndex){
+                    if(!timeItems.get(mCurrentIndex).isAble()) {
+                        if(mTotalScrollY + getNearestAbleTimeDistance() < mMinimumY){
                             startScroll(getNearestBiggerAbleTimeDistanceFromPosition(mCurrentIndex));
                         }else {
                             startScroll(getNearestAbleTimeDistance());
@@ -162,20 +140,9 @@ public class WheelView extends View {
         return false;
     });
 
-
     @NonNull
     private final GestureDetector.SimpleOnGestureListener onGestureListener  = new WheelViewGestureListener();
     private GestureDetector gestureDetector;
-
-
-//instruments
-
-    private final Paint mHighlightTextPaint = new Paint();
-    private final Paint mUsualTextPaint = new Paint();
-    private final Paint mUnableTextPaint = new Paint();
-    private final Paint mLinePaint = new Paint();
-    private final Paint mFadePaint = new Paint();
-    Shader mShader = new LinearGradient(0, 0, 0, 40, Color.WHITE, Color.TRANSPARENT, Shader.TileMode.MIRROR);
 
     //    constructors
     public WheelView(Context context) {
@@ -196,15 +163,14 @@ public class WheelView extends View {
         }
     }
 
-
     private void initView(@NonNull AttributeSet attrs) {
         final TypedArray array = getContext().obtainStyledAttributes(attrs, R.styleable.WheelView);
 
         try {
             if (null != array) {
                 mHighlightColor = array.getColor(R.styleable.WheelView_highlightColor, 0xffafafaf);
-                mTextColor = array.getColor(R.styleable.WheelView_unableColor, 0xff313131);
-                mUnableColor = array.getColor(R.styleable.WheelView_textColor, 0xffc5c5c5);
+                mTextColor = array.getColor(R.styleable.WheelView_textColor, 0xff313131);
+                mUnableColor = array.getColor(R.styleable.WheelView_unableColor, 0xffc5c5c5);
             }
         } finally {
             if (null != array) {
@@ -216,37 +182,59 @@ public class WheelView extends View {
             setLayerType(LAYER_TYPE_SOFTWARE, null);
         }
 
+        mCurrentIndex = 0;
+
+        initData();
+    }
+
+    private void initData(){
         mTextSize = sp2px(getContext(), DEFAULT_TEXT_SIZE);
 
         mHighlightTextPaint.setStrokeWidth(5);
-        mHighlightTextPaint.setColor(Color.BLUE);
+        mHighlightTextPaint.setColor(mHighlightColor);
         mHighlightTextPaint.setTextSize(mTextSize);
         mHighlightTextPaint.setAntiAlias(true);
         mHighlightTextPaint.setTypeface(Typeface.MONOSPACE);
 
         mUsualTextPaint.setStrokeWidth(5);
-        mUsualTextPaint.setColor(Color.BLACK);
+        mUsualTextPaint.setColor(mTextColor);
         mUsualTextPaint.setTextSize(mTextSize);
         mUsualTextPaint.setAntiAlias(true);
         mUsualTextPaint.setTypeface(Typeface.MONOSPACE);
 
         mUnableTextPaint.setStrokeWidth(5);
-        mUnableTextPaint.setColor(Color.GRAY);
+        mUnableTextPaint.setColor(mUnableColor);
         mUnableTextPaint.setTextSize(mTextSize);
         mUnableTextPaint.setAntiAlias(true);
         mUnableTextPaint.setTypeface(Typeface.MONOSPACE);
 
         mLinePaint.setStrokeWidth(7);
-        mLinePaint.setColor(Color.BLUE);
+        mLinePaint.setColor(mHighlightColor);
 
         mFadePaint.setAntiAlias(true);
 
         gestureDetector = new GestureDetector(getContext(), onGestureListener);
         gestureDetector.setIsLongpressEnabled(false);
 
-        mCurrentIndex = 0;
+//        default interval
+        if(mIntervals == null) {
+            mIntervals = new ArrayList<>();
+//            mIntervals.add(new Interval(0, 12 * 3600000, 120));
+            mIntervals.add(new Interval(0, 100 * 3600000, 120));
+        }
+//          default timeset
+        if(timeItems == null) {
+            timeItems = new ArrayList<>();
+            for(int i = 6; i <= 42; ++i ){
+                timeItems.add(new Time(i* 1800000));
+            }
+        }
 
         mUnableText = DEFAULT_UNABLE_TEXT;
+
+        mMaximumY = mItemsListHeight;
+
+        invalidate();
     }
 
     @Override
@@ -258,17 +246,10 @@ public class WheelView extends View {
 
         setDimensions();
         mItemHeight = contentHeight / 3;
-        mItemsListHeight = mItemHeight * (items.size() - 2);
+        mItemsListHeight = mItemHeight * (timeItems.size() - 2);
 
         mTopLineY = paddingTop + mItemHeight;
         mBottomLineY = paddingTop + 2*mItemHeight;
-    }
-
-    private int getTextWeight(String word) {
-        final Rect rect = new Rect();
-        mUnableTextPaint.getTextBounds(word, 0, word.length(), rect);
-
-        return rect.width();
     }
 
     private void setDimensions() {
@@ -282,13 +263,9 @@ public class WheelView extends View {
 
         centerX = paddingLeft + contentWidth / 2;
         centerY = paddingTop + contentHeight / 2;
-
     }
 
 //    ======================== draw
-
-
-
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -312,8 +289,7 @@ public class WheelView extends View {
 
     private void drawTime(Canvas canvas) throws ParseException {
 
-        int count = 0;
-        while (count < items.size()) {
+        for (int count = 0; count <= 35; ++count) {
             canvas.save();
 
             canvas.translate(0.0F, mTotalScrollY*-1);
@@ -322,48 +298,139 @@ public class WheelView extends View {
                 mCurrentIndex = count;
             }
 
-            if(isUnableTime(items.get(count))){
+            if(!timeItems.get(count).isAble) {
                 if(TextUtils.equals(mTextAlign, ALIGN_RIGHT)){
-                    mText = new StringBuilder(items.get(count) + " "+ mUnableText);
+                    mText = new StringBuilder(timeItems.get(count).getTime() + " "+ mUnableText);
                     canvas.drawText(mText.toString(),
-                            getXCoordinate(items.get(count) + " " + mUnableText), calculateTextY(count), mUnableTextPaint);
+                            getXCoordinate(timeItems.get(count).getTime() + " " + mUnableText), calculateTextY(count), mUnableTextPaint);
                 } else {
-                    mText = new StringBuilder(mUnableText + " " + items.get(count));
+                    mText = new StringBuilder(mUnableText + " " + timeItems.get(count).getTime());
                     canvas.drawText(mText.toString(),
-                            getXCoordinate(items.get(count) + " " + mUnableText), calculateTextY(count), mUnableTextPaint);
+                            getXCoordinate(timeItems.get(count).getTime() + " " + mUnableText), calculateTextY(count), mUnableTextPaint);
                 }
 
             } else if(isInHighlightZone(calculateTextY(count))) {
-                canvas.drawText(items.get(count), getXCoordinate(items.get(count)), calculateTextY(count), mHighlightTextPaint);
+                canvas.drawText(timeItems.get(count).getTime(), getXCoordinate(timeItems.get(count).getTime()), calculateTextY(count), mHighlightTextPaint);
             }
             else {
-                canvas.drawText(items.get(count), getXCoordinate(items.get(count)), calculateTextY(count), mUsualTextPaint);
+                canvas.drawText(timeItems.get(count).getTime(), getXCoordinate(timeItems.get(count).getTime()), calculateTextY(count), mUsualTextPaint);
             }
             canvas.restore();
-            count++;
         }
     }
 
-    private void drawFade(Canvas canvas) {
-//        mShader = new LinearGradient(paddingLeft, paddingTop, paddingLeft, paddingTop + (int)(contentHeight*FADE_RECT_INDEX), Color.argb(10, 255, 255,255), Color.argb(255, 255, 255,255), Shader.TileMode.MIRROR);
-//        mFadePaint.setShader(mShader);
-//        canvas.drawRect(paddingLeft, paddingTop, paddingLeft + contentWidth, paddingTop + (int)(contentHeight*FADE_RECT_INDEX), mFadePaint);
-//        canvas.drawRect(paddingLeft,
-//                paddingTop + contentHeight - (int)(contentHeight*FADE_RECT_INDEX),
-//                paddingLeft + contentWidth,
-//                paddingTop + contentHeight ,mFadePaint);
-
+    private boolean isUnable(int ml) {
+        for(Interval interval : mIntervals) {
+            if(interval.isInIntervalRange(ml)) {
+                return false;
+            }
+        }
+        return true;
     }
 
+    private void drawFade(Canvas canvas) {
+        mShader = new LinearGradient(0, 0, 0, (int)(contentHeight*FADE_RECT_INDEX), Color.argb(255, 255, 255,255), Color.argb(0, 255, 255,255), Shader.TileMode.CLAMP);
+        mFadePaint.setShader(mShader);
+        canvas.drawRect(paddingLeft, paddingTop, paddingLeft + contentWidth, paddingTop + (int)(contentHeight*FADE_RECT_INDEX), mFadePaint);
+        mShader = new LinearGradient(0, paddingTop + contentHeight, 0,paddingTop + contentHeight - (int)(contentHeight*FADE_RECT_INDEX), Color.argb(255, 255, 255,255), Color.argb(0, 255, 255,255), Shader.TileMode.CLAMP);
+        mFadePaint.setShader(mShader);
+        canvas.drawRect(paddingLeft,
+                paddingTop + contentHeight - (int)(contentHeight*FADE_RECT_INDEX),
+                paddingLeft + contentWidth,
+                paddingTop + contentHeight ,mFadePaint);
+    }
+
+//    ==============================================================================
+//    methods
+
     private int calculateTextY(int count) {
-        return ++count*mItemHeight - getTextYOffset();
+        return mItemHeight + ++count*mItemHeight - getTextYOffset();
+    }
+
+    private int getTextWeight(String word) {
+        final Rect rect = new Rect();
+        mUnableTextPaint.getTextBounds(word, 0, word.length(), rect);
+
+        return rect.width();
     }
 
     private boolean isInHighlightZone(int distance) {
         return distance - mTotalScrollY > mTopLineY && distance - mTotalScrollY <+ mBottomLineY;
     }
 
-//==================================================================================
+    private int sp2px(Context context, float spValue) {
+        final float fontScale = context.getResources().getDisplayMetrics().scaledDensity;
+        return (int) (spValue * fontScale + 0.5f);
+    }
+
+    private void cancelSchedule() {
+        if (null != scheduledFuture && !scheduledFuture.isCancelled()) {
+            scheduledFuture.cancel(true);
+            scheduledFuture = null;
+        }
+    }
+
+    private void itemSelected() {
+        postDelayed(this::onItemSelected, 0L);
+    }
+
+    private void onItemSelected() {
+        for (OnItemSelectedListener onItemSelectedListener : listeners) {
+            try {
+                onItemSelectedListener.onLoopScrollFinish(timeItems.get(mCurrentIndex).getTime(), timeItems.indexOf(timeItems.get(mCurrentIndex)));
+            } catch (ParseException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private int getNearestAbleTimeDistance() throws ParseException {
+        for(int i = 0; i <= timeItems.size()/3; ++i) {
+            if(mCurrentIndex + i <= timeItems.size() && timeItems.get(mCurrentIndex + i).isAble()) {
+                return i*(int)mItemHeight;
+            }else if(mCurrentIndex - i >= 0 && timeItems.get(mCurrentIndex - i).isAble()){
+                return -i*(int)mItemHeight;
+            }
+        }
+        return 0;
+    }
+
+    private int getNearestBiggerAbleTimeDistanceFromPosition(int position) throws ParseException {
+        for(int i = position; i <= timeItems.size(); ++i) {
+            if(timeItems.get(i).isAble()) {
+                mMinimumY = (i -1) * mItemHeight;
+                return mMinimumY - mCurrentIndex * mItemHeight;
+            }
+        }
+        return 0;
+    }
+
+    private void startSmoothScrollTo() {
+        int offset = (int) (mTotalScrollY % (mItemHeight));
+        cancelSchedule();
+        scheduledFuture = executorService.scheduleWithFixedDelay(new HalfHeightRunnable(offset), 0, 10, TimeUnit.MILLISECONDS);
+    }
+
+    private void startSmoothScrollTo(float velocityY) {
+        cancelSchedule();
+        int velocityFling = 20;
+        scheduledFuture = executorService.scheduleWithFixedDelay(new WheelView.FlingRunnable(velocityY), 0, velocityFling, TimeUnit.MILLISECONDS);
+    }
+
+    private void startScroll(int distance){
+        cancelSchedule();
+        scheduledFuture = executorService.scheduleWithFixedDelay(new ScrollToTargetRunnable(distance),
+                0, 10, TimeUnit.MILLISECONDS);
+    }
+
+//  open method
+    public void translateToPosition(int position) throws ParseException {
+        if(timeItems.get(position).isAble()) {
+            startScroll(getNearestBiggerAbleTimeDistanceFromPosition(position));
+        }else {
+            startScroll((position - mCurrentIndex) * mItemHeight);
+        }
+    }
 
 //    listener
 
@@ -397,12 +464,13 @@ public class WheelView extends View {
         @Override
         public boolean onScroll(MotionEvent e1, MotionEvent e2, float distanceX, float distanceY) {
             mTotalScrollY = (int) ((float) mTotalScrollY + distanceY);
-
             if(mTotalScrollY < 0) {
                 mTotalScrollY = 0;
-            }else if(mTotalScrollY < mMinimumIndex){
-                mTotalScrollY = mMinimumIndex;
-            } else if(mTotalScrollY > mItemsListHeight){
+            }else if(mTotalScrollY < mMinimumY){
+                mTotalScrollY = mMinimumY;
+            } else if(mTotalScrollY > mMaximumY) {
+                mTotalScrollY = mMaximumY;
+            }else if(mTotalScrollY > mItemsListHeight){
                 mTotalScrollY = mItemsListHeight;
             }
 
@@ -411,6 +479,8 @@ public class WheelView extends View {
             return true;
         }
     }
+
+//    run
     class FlingRunnable implements Runnable {
 
         float velocity;
@@ -444,11 +514,13 @@ public class WheelView extends View {
             if (mTotalScrollY <= 0) {
                 velocity = 0F;
                 mTotalScrollY = 0;
-            } else if(mTotalScrollY <= mMinimumIndex){
+            } else if(mTotalScrollY <= mMinimumY){
                 velocity = 0F;
-                mTotalScrollY = mMinimumIndex;
+                mTotalScrollY = mMinimumY;
+            } else if(mTotalScrollY >= mMaximumY){
+                mTotalScrollY = mMaximumY;
             } else if (mTotalScrollY >= mItemsListHeight) {
-                mTotalScrollY = mItemHeight;
+                mTotalScrollY = mItemsListHeight;
             }
 
             velocity = (velocity < 0.0F) ? velocity + 20F : velocity - 20F;
@@ -498,7 +570,6 @@ public class WheelView extends View {
         }
     }
 
-
     class ScrollToTargetRunnable implements Runnable {
         int offset;
         int speed = 20;
@@ -529,7 +600,6 @@ public class WheelView extends View {
             }else {
                 mTotalScrollY -= speed;
             }
-
             //first in
             if (offset <= 0) {
                 cancelSchedule();
@@ -540,159 +610,36 @@ public class WheelView extends View {
         }
     }
 
-//    ======== methods
-
-    private void cancelSchedule() {
-        if (null != scheduledFuture && !scheduledFuture.isCancelled()) {
-            scheduledFuture.cancel(true);
-            scheduledFuture = null;
-        }
-    }
-
-    private void startSmoothScrollTo() {
-        int offset = (int) (mTotalScrollY % (mItemHeight));
-        cancelSchedule();
-        scheduledFuture = executorService.scheduleWithFixedDelay(new HalfHeightRunnable(offset), 0, 10, TimeUnit.MILLISECONDS);
-    }
-
-    private void startSmoothScrollTo(float velocityY) {
-        cancelSchedule();
-        int velocityFling = 20;
-        scheduledFuture = executorService.scheduleWithFixedDelay(new WheelView.FlingRunnable(velocityY), 0, velocityFling, TimeUnit.MILLISECONDS);
-    }
-
-    private void startScroll(int distance){
-        cancelSchedule();
-        scheduledFuture = executorService.scheduleWithFixedDelay(new ScrollToTargetRunnable(distance),
-                0, 10, TimeUnit.MILLISECONDS);
-    }
-
-    private void itemSelected() {
-        postDelayed(this::onItemSelected, 0L);
-    }
-
-    private void onItemSelected() {
-        for (OnItemSelectedListener onItemSelectedListener : listeners) {
-            try {
-                onItemSelectedListener.onLoopScrollFinish(items.get(mCurrentIndex), items.indexOf(items.get(mCurrentIndex)));
-            } catch (ParseException e) {
-                e.printStackTrace();
-            }
-
-        }
-    }
-    private long getMilisecounds(String format) throws ParseException {
-        Date date = mDateFormat.parse(format);
-        return date.getTime();
-    }
-
-    private int getNearestAbleTimeDistance() throws ParseException {
-        for(int i = 0; i <= items.size()/2; ++i){
-            if(!isUnableTime(items.get(mCurrentIndex + i))){
-                return i*(int)mItemHeight;
-            }else if(!isUnableTime(items.get(mCurrentIndex - i))){
-                return -i*(int)mItemHeight;
-            }
-        }
-        return 0;
-    }
-
-    private int getNearestBiggerAbleTimeDistanceFromPosition(int position) throws ParseException {
-        for(int i = position; i <= items.size(); ++i) {
-            if(!isUnableTime(items.get(i))) {
-                mMinimumIndex = (i -1) * mItemHeight;
-                return mMinimumIndex - mCurrentIndex * mItemHeight;
-            }
-        }
-        return 0;
-    }
-
-    private boolean isUnableTime(String itemTime) throws ParseException {
-        return getMilisecounds(itemTime) > getMilisecounds(mStartUnablePeriod)
-                && getMilisecounds(itemTime) < getMilisecounds(mFinishUnablePeriod);
-    }
-
-    public void setOnItemSelectedListener(@Nullable OnItemSelectedListener loopScrollListener) {
-        listeners.add(loopScrollListener);
-        invalidate();
-    }
-
-//    listeners
+    //    listeners
     public interface OnItemSelectedListener {
         void onLoopScrollFinish(@NonNull String item, int position) throws ParseException;
     }
 
-    public void translateToPosition(int position) throws ParseException {
-        if(isUnableTime(items.get(position))) {
-            startScroll(getNearestBiggerAbleTimeDistanceFromPosition(position));
-        }else {
-            startScroll((position - mCurrentIndex) * mItemHeight);
-        }
-    }
-
-    public void setmMinimumIndex(int position) {
-        mMinimumIndex = (position - 1)*mItemHeight;
-    }
-
-    public void setUnableInterval(int begin, int end) {
-        mStartUnablePeriod = convertMlToDayTime(begin);
-        mFinishUnablePeriod = convertMlToDayTime(end);
-    }
-
-    private String convertMlToDayTime(int ml){
-        Date date = new Date(ml);
-        return mDateFormat.format(date);
-    }
-
-    public void setAlign(String align) {
-        if(TextUtils.equals(align, ALIGN_LEFT) || TextUtils.equals(align, ALIGN_RIGHT)) {
-            mTextAlign = align;
-        } else {
-            mTextAlign = ALIGN_LEFT;
-        }
-    }
-
-    private int getXCoordinate(String word){
-        if(TextUtils.equals(mTextAlign, ALIGN_RIGHT)){
-         return (int)(paddingLeft + contentWidth*TEXT_OFFSET_INDEX);
-        } else {
-            return paddingLeft + contentWidth - (int)(contentWidth*TEXT_OFFSET_INDEX) - getTextWeight(word);
-        }
-    }
-
-    private int getTextYOffset() {
-        return (mItemHeight - mTextSize) / 2;
-    }
-
-    public int sp2px(Context context, float spValue) {
-        final float fontScale = context.getResources().getDisplayMetrics().scaledDensity;
-        return (int) (spValue * fontScale + 0.5f);
-    }
-
-    public final void setTextSize(float size) {
-        if (size > 0 && size < MAX_TEXT_SIZE) {
-            mTextSize = sp2px(getContext(), size);
-        } else {
-            mTextSize = sp2px(getContext(), MAX_TEXT_SIZE);
-        }
-    }
-
-    public String getUnableText() {
-        return mUnableText;
-    }
-
-    public void setUnableText(String mUnableText) {
-        this.mUnableText = mUnableText;
-    }
+//    classes
 
     public class Interval {
 
         private int mBegin;
         private int mEnd;
 
-        public Interval(int mBegin, int mEnd) {
+        public int getPeriodInMin() {
+            return mPeriodInMin;
+        }
+
+        public void setPeriodInMin(int mPeriodInMin) {
+            this.mPeriodInMin = mPeriodInMin;
+        }
+
+        private int mPeriodInMin;
+
+        public Interval(int mBegin, int mEnd, int interval) {
             this.mBegin = mBegin;
             this.mEnd = mEnd;
+            this.mPeriodInMin = interval;
+        }
+
+        public boolean isInIntervalRange(int ml) {
+            return ml > mBegin && ml < mEnd;
         }
 
         public int getBegin() {
@@ -717,8 +664,20 @@ public class WheelView extends View {
         private String time;
         private int timeInMl;
 
+        public boolean isAble() {
+            return isAble;
+        }
+
+        public void setAble(boolean able) {
+            isAble = able;
+        }
+
+        private boolean isAble;
+
         public Time(int timeInMl) {
             this.timeInMl = timeInMl;
+            setTimeInMl(timeInMl);
+            isAble = !isUnable(timeInMl);
         }
 
         public String getTime() {
@@ -737,6 +696,71 @@ public class WheelView extends View {
             mDate.setTime(timeInMl);
             time = mDateFormat.format(mDate);
             this.timeInMl = timeInMl;
+        }
+    }
+
+//    getters setters
+//    =================================================================
+    public String getUnableText() {
+        return mUnableText;
+    }
+
+    public void setUnableText(String mUnableText) {
+        this.mUnableText = mUnableText;
+    }
+
+    public void setMinimumY(int position) {
+        mMinimumY = (position - 1)*mItemHeight;
+        mMaximumY = mItemsListHeight;
+    }
+
+    public void setIntervals(List<WheelView.Interval> intervals) {
+        mIntervals = intervals;
+        initData();
+    }
+
+    public void setAlign(String align) {
+        if(TextUtils.equals(align, ALIGN_LEFT) || TextUtils.equals(align, ALIGN_RIGHT)) {
+            mTextAlign = align;
+        } else {
+            mTextAlign = ALIGN_LEFT;
+        }
+    }
+
+    private int getXCoordinate(String word){
+        if(TextUtils.equals(mTextAlign, ALIGN_RIGHT)){
+            return (int)(paddingLeft + contentWidth*TEXT_OFFSET_INDEX);
+        } else {
+            return paddingLeft + contentWidth - (int)(contentWidth*TEXT_OFFSET_INDEX) - getTextWeight(word);
+        }
+    }
+
+    private int getTextYOffset() {
+        return (mItemHeight - mTextSize) / 2;
+    }
+
+    public int getMaximumY() {
+        return mMaximumY;
+    }
+
+    public void setMaximumY(int interval) {
+        this.mMaximumY = mItemsListHeight - (interval/30 - 1) * mItemHeight;
+    }
+
+    public int getSelectedPeriod() {
+        return timeItems.get(mCurrentIndex).getTimeInMl();
+    }
+
+    public void setOnItemSelectedListener(@Nullable OnItemSelectedListener loopScrollListener) {
+        listeners.add(loopScrollListener);
+        invalidate();
+    }
+
+    public final void setTextSize(float size) {
+        if (size > 0 && size < MAX_TEXT_SIZE) {
+            mTextSize = sp2px(getContext(), size);
+        } else {
+            mTextSize = sp2px(getContext(), MAX_TEXT_SIZE);
         }
     }
 }
